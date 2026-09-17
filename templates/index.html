@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fear & Greed Index | Economic & Financial Sentiment</title>
+    <meta name="description" content="Interactive Fear & Greed index tracking the latest economic, market and crypto sentiment from global financial press articles.">
+    <style>
+      :root {
+        --bg: #f3f7f9;
+        --panel: #ffffff;
+        --line: #dde6ec;
+        --ink: #15232d;
+        --muted: #60707c;
+        --accent: #1f6f8b;
+        --accent-2: #0d3b4d;
+        --green: #2ca673;
+        --amber: #f0b429;
+        --red: #d15a5a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: linear-gradient(180deg, #eef4f6 0%, #f8fafb 100%);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      a { color: inherit; text-decoration: none; }
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 28px 24px 48px;
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .brand-mark {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #ef5350, #f39c12, #2eae6a, #3b82f6);
+        box-shadow: 0 0 0 4px rgba(31,111,139,0.10);
+      }
+      .brand-name {
+        font-size: 1.1rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .select-wrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255,255,255,0.7);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 8px 12px;
+      }
+      select, button {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 0.95rem;
+      }
+      select {
+        background: white;
+        color: var(--ink);
+      }
+      button {
+        background: var(--accent);
+        color: white;
+        border: none;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .hero {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 20px;
+      }
+      .hero-card, .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: 0 10px 24px rgba(20,35,45,0.05);
+      }
+      .hero-card {
+        padding: 28px;
+      }
+      .eyebrow {
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+      h1 {
+        margin: 12px 0 14px;
+        font-size: clamp(2.2rem, 4vw, 4rem);
+        line-height: 1.1;
+      }
+      .subtitle {
+        max-width: 680px;
+        color: var(--muted);
+        line-height: 1.7;
+        font-size: 1.03rem;
+      }
+      .stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 22px;
+      }
+      .stat-pill {
+        background: #eef7fb;
+        border: 1px solid #d9ebf3;
+        border-radius: 999px;
+        padding: 8px 12px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--accent-2);
+      }
+      .score-panel {
+        padding: 28px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .score-label {
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+      }
+      .score-value {
+        margin-top: 12px;
+        font-size: clamp(3rem, 6vw, 5rem);
+        font-weight: 800;
+        color: var(--accent);
+      }
+      .score-status {
+        margin-top: 8px;
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--green);
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(180px, 1fr));
+        gap: 18px;
+        margin-top: 24px;
+      }
+      .card {
+        padding: 18px 20px;
+      }
+      .metric-label {
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+      }
+      .metric-value {
+        font-size: clamp(1.6rem, 2vw, 2.5rem);
+        font-weight: 800;
+        margin-top: 8px;
+      }
+      .metric-caption {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+      .chart-card {
+        margin-top: 26px;
+        padding: 12px;
+      }
+      .chart-card .chart-wrapper {
+        min-height: 720px;
+      }
+      .chart-card .chart-wrapper .plotly-graph-div {
+        width: 100% !important;
+      }
+      @media (max-width: 900px) {
+        .hero { grid-template-columns: 1fr; }
+        .metrics { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div class="brand-name">Fear &amp; Greed Monitor</div>
+        </div>
+        <div class="actions">
+          <label class="select-wrap" for="days-select">
+            <span>Days</span>
+            <select id="days-select">
+              <option value="7">7</option>
+              <option value="14">14</option>
+              <option value="30" selected>30</option>
+              <option value="60">60</option>
+              <option value="90">90</option>
+            </select>
+          </label>
+          <label class="select-wrap" for="theme-select">
+            <span>Theme</span>
+            <select id="theme-select">
+              <option value="finance" {% if theme == 'finance' %}selected{% endif %}>Finance</option>
+              <option value="esg" {% if theme == 'esg' %}selected{% endif %}>ESG</option>
+              <option value="ecology" {% if theme == 'ecology' %}selected{% endif %}>Écologie</option>
+            </select>
+          </label>
+          <button id="refresh-btn" type="button">Refresh</button>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="hero-card">
+          <div class="eyebrow">Market sentiment</div>
+          <h1>Economic &amp; financial mood in one view.</h1>
+          <p class="subtitle">
+            A daily reading built from international articles across economy, markets and crypto.
+            It aggregates press sentiment, groups duplicate coverage and highlights where the market tone is turning.
+          </p>
+          <div class="stats">
+            <span class="stat-pill">{{ summary.days }} day window</span>
+            <span class="stat-pill">{{ summary.article_count }} articles</span>
+            <span class="stat-pill">Live local database</span>
+          </div>
+        </div>
+
+        <div class="hero-card score-panel">
+          <div class="score-label">Latest reading</div>
+          <div class="score-value">{{ '%.2f'|format(summary.latest_index|float) if summary.latest_index is not none else '—' }}</div>
+          <div class="score-status">{{ summary.latest_status }}</div>
+          <div class="metric-caption" style="margin-top: 14px; color: var(--muted);">
+            Weighted index: {{ '%.2f'|format(summary.weighted_index|float) if summary.weighted_index is not none else '—' }}
+          </div>
+        </div>
+      </section>
+
+      <section class="metrics">
+        <div class="card">
+          <div class="metric-label">Weighted index</div>
+          <div class="metric-value">{{ '%.2f'|format(summary.weighted_index|float) if summary.weighted_index is not none else '—' }}</div>
+          <div class="metric-caption">From all available article volume</div>
+        </div>
+        <div class="card">
+          <div class="metric-label">Latest day</div>
+          <div class="metric-value">{{ summary.global[-1].date if summary.global else '-' }}</div>
+          <div class="metric-caption">Most recent published value</div>
+        </div>
+        <div class="card">
+          <div class="metric-label">Articles counted</div>
+          <div class="metric-value">{{ summary.article_count }}</div>
+          <div class="metric-caption">Across the selected time window</div>
+        </div>
+      </section>
+
+      <section class="chart-card hero-card">
+        <div class="chart-wrapper">
+          {{ chart_html | safe }}
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const select = document.getElementById('days-select');
+      const themeSelect = document.getElementById('theme-select');
+      const button = document.getElementById('refresh-btn');
+
+      function buildUrl() {
+        const params = new URLSearchParams();
+        params.set('days', select.value);
+        params.set('theme', themeSelect.value);
+        return `/?${params.toString()}`;
+      }
+
+      button.addEventListener('click', () => {
+        window.location.href = buildUrl();
+      });
+
+      select.addEventListener('change', () => {
+        window.location.href = buildUrl();
+      });
+
+      themeSelect.addEventListener('change', () => {
+        window.location.href = buildUrl();
+      });
+    </script>
+  </body>
+</html>

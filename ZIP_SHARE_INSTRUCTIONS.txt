@@ -1,0 +1,23 @@
+Projet : Fear & Greed Dashboard
+
+1. Décompressez le dossier.
+2. Ouvrez un terminal dans le dossier du projet.
+3. Créez un environnement virtuel :
+   python3 -m venv .venv
+   source .venv/bin/activate
+4. Installez les dépendances :
+   python -m pip install --upgrade pip
+   pip install -r requirements.txt
+5. Démarrez l’application :
+   python3 app.py
+6. Ouvrez dans le navigateur :
+   http://127.0.0.1:5001
+
+Option alternative :
+   python3 open_dashboard.py --days 30 --no-open
+
+Vous pouvez ensuite ouvrir le fichier :
+   fear_greed_chart.html
+
+Le projet est conçu pour un usage local et privé.
+Il n’est pas hébergé publiquement.

@@ -1,0 +1,12 @@
+google-genai
+feedparser
+requests
+beautifulsoup4
+pytest
+transformers
+torch
+sentencepiece
+protobuf
+plotly
+Flask
+gunicorn
