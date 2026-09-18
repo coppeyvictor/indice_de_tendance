@@ -71,6 +71,42 @@ FEAR_GREED_ZONES = (
 )
 MISSING_DATA_CUTOFF_DATE = "2025-09-07"
 
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except ImportError:  # pragma: no cover
+    psycopg2 = None
+    RealDictCursor = None
+
+
+def get_database_url() -> str | None:
+    return os.getenv("DATABASE_URL")
+
+
+def get_database_connection():
+    database_url = get_database_url()
+    if database_url:
+        if psycopg2 is None:
+            raise RuntimeError("psycopg2-binary is required when DATABASE_URL is configured")
+        return psycopg2.connect(database_url, sslmode="require")
+    conn = sqlite3.connect("sentiments.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def fetch_rows(query: str, params: tuple = (), *, fetch_one: bool = False):
+    database_url = get_database_url()
+    conn = get_database_connection()
+    try:
+        if database_url:
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute(query, params)
+            return cursor.fetchone() if fetch_one else cursor.fetchall()
+        cursor = conn.execute(query, params)
+        return cursor.fetchone() if fetch_one else cursor.fetchall()
+    finally:
+        conn.close()
+
 
 def compute_fear_greed_index(score: float) -> float:
     """Map a sentiment score in [-1, 1] to a 0-100 fear/greed index."""
@@ -88,9 +124,25 @@ def _cluster_rows(
     from veille_presse import initialize_database
 
     initialize_database()
-    with sqlite3.connect("sentiments.db") as connection:
-        rows = connection.execute(
+    database_url = get_database_url()
+    if database_url:
+        query = """
+            SELECT article_day, COALESCE(category, 'economy'),
+                   COALESCE(cluster_id, url), AVG(score), COUNT(*),
+                   LEAST(%s, 1.0 + 0.2 * (COUNT(*) - 1))
+            FROM daily_articles
+            WHERE score IS NOT NULL AND article_day BETWEEN %s AND %s
+              AND (%s IS NULL OR COALESCE(theme, 'finance') = %s)
+            GROUP BY article_day, category, cluster_id, url
+            ORDER BY article_day, category, cluster_id, url
             """
+        params = (CLUSTER_WEIGHT_CAP, start_date, end_date, theme, theme)
+        with get_database_connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+    else:
+        query = """
             SELECT article_day, COALESCE(category, 'economy'),
                    COALESCE(cluster_id, url), AVG(score), COUNT(*),
                    MIN(?, 1.0 + 0.2 * (COUNT(*) - 1))
@@ -99,9 +151,10 @@ def _cluster_rows(
               AND (? IS NULL OR COALESCE(theme, 'finance') = ?)
             GROUP BY article_day, category, cluster_id, url
             ORDER BY article_day, category, cluster_id, url
-            """,
-            (CLUSTER_WEIGHT_CAP, start_date, end_date, theme, theme),
-        ).fetchall()
+            """
+        params = (CLUSTER_WEIGHT_CAP, start_date, end_date, theme, theme)
+        with get_database_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
 
     grouped = defaultdict(lambda: defaultdict(list))
     for article_day, category, cluster_key, score, article_count, cluster_weight in rows:
@@ -548,10 +601,19 @@ def generate_interactive_fear_greed_chart(
     curves = get_index_curves(available_days, theme=selected_theme)
     labels = [str(row["date"]) for row in curves["global"][1]]
     generated_at = datetime.now(timezone.utc)
-    with sqlite3.connect("sentiments.db") as connection:
-        last_data_update = connection.execute(
-            "SELECT MAX(analyzed_at) FROM daily_articles WHERE analyzed_at IS NOT NULL"
-        ).fetchone()[0]
+    database_url = get_database_url()
+    if database_url:
+        with get_database_connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT MAX(analyzed_at) FROM daily_articles WHERE analyzed_at IS NOT NULL"
+            )
+            last_data_update = cursor.fetchone()[0]
+    else:
+        with sqlite3.connect("sentiments.db") as connection:
+            last_data_update = connection.execute(
+                "SELECT MAX(analyzed_at) FROM daily_articles WHERE analyzed_at IS NOT NULL"
+            ).fetchone()[0]
     if last_data_update:
         updated_at = datetime.fromisoformat(last_data_update).astimezone(timezone.utc)
     else:
@@ -711,17 +773,33 @@ def generate_interactive_fear_greed_chart(
             ],
         ],
     )
-    with sqlite3.connect("sentiments.db") as connection:
-        article_rows = connection.execute(
-            """
-                 SELECT article_day, title, title_fr, title_en, source, score, url, cluster_size,
-                     category, country, asset_type, theme
-            FROM daily_articles
-            WHERE article_day BETWEEN ? AND ?
-            ORDER BY article_day DESC, published DESC, title ASC
-            """,
-            (labels[0] if labels else "", labels[-1] if labels else ""),
-        ).fetchall()
+    database_url = get_database_url()
+    if database_url:
+        with get_database_connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                     SELECT article_day, title, title_fr, title_en, source, score, url, cluster_size,
+                         category, country, asset_type, theme
+                FROM daily_articles
+                WHERE article_day BETWEEN %s AND %s
+                ORDER BY article_day DESC, published DESC, title ASC
+                """,
+                (labels[0] if labels else "", labels[-1] if labels else ""),
+            )
+            article_rows = cursor.fetchall()
+    else:
+        with sqlite3.connect("sentiments.db") as connection:
+            article_rows = connection.execute(
+                """
+                     SELECT article_day, title, title_fr, title_en, source, score, url, cluster_size,
+                         category, country, asset_type, theme
+                FROM daily_articles
+                WHERE article_day BETWEEN ? AND ?
+                ORDER BY article_day DESC, published DESC, title ASC
+                """,
+                (labels[0] if labels else "", labels[-1] if labels else ""),
+            ).fetchall()
 
     articles_by_day = {}
     for article_day, title, title_fr, title_en, source, score, url, cluster_size, category, country, asset_type, theme in article_rows:
