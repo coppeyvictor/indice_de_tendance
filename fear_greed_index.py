@@ -547,11 +547,6 @@ def generate_interactive_fear_greed_chart(
     available_days = max(days, 90)
     curves = get_index_curves(available_days, theme=selected_theme)
     labels = [str(row["date"]) for row in curves["global"][1]]
-    chart_end_day = (
-        (datetime.fromisoformat(labels[-1]).date() + timedelta(days=1)).isoformat()
-        if labels
-        else None
-    )
     generated_at = datetime.now(timezone.utc)
     with sqlite3.connect("sentiments.db") as connection:
         last_data_update = connection.execute(
@@ -563,41 +558,52 @@ def generate_interactive_fear_greed_chart(
         updated_at = generated_at
     updated_at_label = updated_at.strftime("%d %B %Y at %H:%M UTC")
     current_day = datetime.now(timezone.utc).date().isoformat()
-    axis_tick_labels = labels[-min(days, len(labels)):]
-    if days > 7:
-        first_day = datetime.fromisoformat(axis_tick_labels[0]).date()
-        last_day = datetime.fromisoformat(axis_tick_labels[-1]).date()
-        first_monday = first_day + timedelta(days=(7 - first_day.weekday()) % 7)
-        axis_tick_labels = [
-            (first_monday + timedelta(days=7 * index)).isoformat()
-            for index in range(((last_day - first_monday).days // 7) + 1)
-        ]
-        if current_day <= last_day.isoformat() and current_day not in axis_tick_labels:
-            axis_tick_labels.append(current_day)
-    daily_article_counts = {
-        str(row["date"]): int(row.get("article_count", 0))
-        for row in curves["global"][1]
-    }
-    axis_article_counts = daily_article_counts.copy()
-    if days > 7:
-        axis_article_counts = {
-            monday: sum(
-                count
-                for day, count in axis_article_counts.items()
-                if monday <= day <= (
-                    datetime.fromisoformat(monday).date() + timedelta(days=6)
-                ).isoformat()
-            )
-            for monday in axis_tick_labels
-        }
-    axis_tick_text = [
-        (
-            f"{datetime.fromisoformat(day).strftime('%b %-d')}"
-            if day == current_day
-            else f"{datetime.fromisoformat(day).strftime('%b %-d')}<br>{axis_article_counts.get(day, 0)} article(s)"
+
+    if not labels:
+        axis_tick_labels = [current_day]
+        axis_tick_text = ["No data available yet"]
+        chart_end_day = current_day
+        daily_article_counts = {}
+        axis_article_counts = {}
+    else:
+        chart_end_day = (
+            (datetime.fromisoformat(labels[-1]).date() + timedelta(days=1)).isoformat()
         )
-        for day in axis_tick_labels
-    ]
+        axis_tick_labels = labels[-min(days, len(labels)):]
+        if days > 7:
+            first_day = datetime.fromisoformat(axis_tick_labels[0]).date()
+            last_day = datetime.fromisoformat(axis_tick_labels[-1]).date()
+            first_monday = first_day + timedelta(days=(7 - first_day.weekday()) % 7)
+            axis_tick_labels = [
+                (first_monday + timedelta(days=7 * index)).isoformat()
+                for index in range(((last_day - first_monday).days // 7) + 1)
+            ]
+            if current_day <= last_day.isoformat() and current_day not in axis_tick_labels:
+                axis_tick_labels.append(current_day)
+        daily_article_counts = {
+            str(row["date"]): int(row.get("article_count", 0))
+            for row in curves["global"][1]
+        }
+        axis_article_counts = daily_article_counts.copy()
+        if days > 7:
+            axis_article_counts = {
+                monday: sum(
+                    count
+                    for day, count in axis_article_counts.items()
+                    if monday <= day <= (
+                        datetime.fromisoformat(monday).date() + timedelta(days=6)
+                    ).isoformat()
+                )
+                for monday in axis_tick_labels
+            }
+        axis_tick_text = [
+            (
+                f"{datetime.fromisoformat(day).strftime('%b %-d')}"
+                if day == current_day
+                else f"{datetime.fromisoformat(day).strftime('%b %-d')}<br>{axis_article_counts.get(day, 0)} article(s)"
+            )
+            for day in axis_tick_labels
+        ]
 
     figure = go.Figure()
     for lower, upper, label, _, color in sentiment_zones:
@@ -622,6 +628,16 @@ def generate_interactive_fear_greed_chart(
                 annotation_position="top left",
                 annotation_font={"size": 11, "color": "#5b5b5b"},
             )
+    else:
+        figure.add_annotation(
+            text="No data available yet",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font={"size": 18, "color": "#5b5b5b"},
+        )
 
     curve_colors = {"global": "#1f6f8b", "economy": "#264653", "markets": "#e76f51", "crypto": "#8a5a44"}
     chart_families = tuple(INDEX_FAMILY_LABELS) if selected_theme == "finance" else ("global",)
