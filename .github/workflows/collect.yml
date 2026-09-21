@@ -14,7 +14,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: python veille_presse.py --once
+      - run: |
+          python veille_presse.py --once --theme finance
+          python veille_presse.py --once --theme esg
+          python veille_presse.py --once --theme ecology
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SENTIMENT_PROVIDER: local

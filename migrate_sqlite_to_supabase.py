@@ -2,6 +2,7 @@ import os
 import sqlite3
 
 import psycopg2
+from psycopg2.extras import execute_values
 
 SQLITE_DB = "sentiments.db"
 PG_DSN = os.environ["DATABASE_URL"]
@@ -51,16 +52,23 @@ for table in ("daily_articles", "articles"):
         continue
 
     columns = [row[1] for row in sqlite_conn.execute(f"PRAGMA table_info({table})").fetchall()]
-    insert_sql = (
-        f"INSERT INTO \"{table}\" ({', '.join(f'\"{c}\"' for c in columns)}) "
-        f"SELECT {', '.join(['%s'] * len(columns))} "
-        f"WHERE NOT EXISTS (SELECT 1 FROM \"{table}\" WHERE \"url\" = %s)"
-    )
 
-    for row in rows:
-        values = tuple(row[c] for c in columns)
+    pg_cur.execute(f'SELECT "url" FROM "{table}"')
+    existing_urls = {row[0] for row in pg_cur.fetchall()}
+
+    new_rows = [
+        tuple(row[c] for c in columns)
+        for row in rows
+        if row["url"] not in existing_urls
+    ]
+    print(f"{table}: {len(new_rows)} new row(s) to insert, {len(rows) - len(new_rows)} already present")
+
+    if new_rows:
+        insert_sql = (
+            f"INSERT INTO \"{table}\" ({', '.join(f'\"{c}\"' for c in columns)}) VALUES %s"
+        )
         try:
-            pg_cur.execute(insert_sql, values + (row["url"],))
+            execute_values(pg_cur, insert_sql, new_rows, page_size=500)
         except Exception as exc:  # pragma: no cover
             print(f"Failed inserting into {table}: {exc}")
             raise
