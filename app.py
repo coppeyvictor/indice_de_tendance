@@ -16,7 +16,7 @@ OUTPUT_PATH = BASE_DIR / "fear_greed_chart.html"
 DEFAULT_DAYS = 30
 DEFAULT_THEME = "finance"
 VALID_THEMES = {"finance", "esg", "ecology"}
-CHART_CACHE_SECONDS = int(os.environ.get("CHART_CACHE_SECONDS", "300"))
+CHART_CACHE_SECONDS = int(os.environ.get("CHART_CACHE_SECONDS", str(6 * 3600)))
 
 app = Flask(__name__, template_folder="templates")
 
