@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -15,8 +16,11 @@ OUTPUT_PATH = BASE_DIR / "fear_greed_chart.html"
 DEFAULT_DAYS = 30
 DEFAULT_THEME = "finance"
 VALID_THEMES = {"finance", "esg", "ecology"}
+CHART_CACHE_SECONDS = int(os.environ.get("CHART_CACHE_SECONDS", "300"))
 
 app = Flask(__name__, template_folder="templates")
+
+_chart_cache: dict[tuple[int, str], tuple[float, Path]] = {}
 
 
 def normalize_theme(theme: str | None) -> str:
@@ -27,8 +31,17 @@ def normalize_theme(theme: str | None) -> str:
 
 
 def build_dashboard(days: int = DEFAULT_DAYS, theme: str = DEFAULT_THEME) -> Path:
-    generated_path = generate_interactive_fear_greed_chart(str(OUTPUT_PATH), days, theme=normalize_theme(theme))
-    return Path(generated_path)
+    theme = normalize_theme(theme)
+    cache_key = (days, theme)
+    cached = _chart_cache.get(cache_key)
+    now = time.monotonic()
+    if cached and now - cached[0] < CHART_CACHE_SECONDS:
+        return cached[1]
+
+    output_path = BASE_DIR / f"fear_greed_chart_{theme}_{days}.html"
+    generated_path = Path(generate_interactive_fear_greed_chart(str(output_path), days, theme=theme))
+    _chart_cache[cache_key] = (now, generated_path)
+    return generated_path
 
 
 def dashboard_summary(days: int = DEFAULT_DAYS) -> dict:
@@ -59,11 +72,9 @@ def index():
     theme = normalize_theme(request.args.get("theme"))
     if days is None or days <= 0:
         days = DEFAULT_DAYS
-    build_dashboard(days, theme=theme)
-    response = send_file(OUTPUT_PATH, mimetype="text/html")
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    chart_path = build_dashboard(days, theme=theme)
+    response = send_file(chart_path, mimetype="text/html")
+    response.headers["Cache-Control"] = f"public, max-age={CHART_CACHE_SECONDS}"
     return response
 
 
@@ -73,11 +84,9 @@ def dashboard():
     theme = normalize_theme(request.args.get("theme"))
     if days is None or days <= 0:
         days = DEFAULT_DAYS
-    build_dashboard(days, theme=theme)
-    response = send_file(OUTPUT_PATH, mimetype="text/html")
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
+    chart_path = build_dashboard(days, theme=theme)
+    response = send_file(chart_path, mimetype="text/html")
+    response.headers["Cache-Control"] = f"public, max-age={CHART_CACHE_SECONDS}"
     return response
 
 
