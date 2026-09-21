@@ -3,7 +3,7 @@ import json
 import os
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -70,6 +70,7 @@ FEAR_GREED_ZONES = (
     (80, 100, "Extreme greed", "#43aa8b", "rgba(67, 170, 139, 0.16)"),
 )
 MISSING_DATA_CUTOFF_DATE = "2025-09-07"
+FROZEN_AFTER_DAYS = 2
 
 try:
     import psycopg2
@@ -115,15 +116,20 @@ def compute_fear_greed_index(score: float) -> float:
     return round((score + 1.0) * 50.0, 2)
 
 
-def _cluster_rows(
-    start_date: str,
-    end_date: str,
-    *,
-    theme: str | None = None,
-) -> dict[str, dict[str, list[dict[str, float | int | str]]]]:
-    from veille_presse import initialize_database
+_CLUSTER_CACHE: dict[tuple[str, str], dict[str, list[dict[str, float | int | str]]]] = {}
 
-    initialize_database()
+
+def _is_frozen_day(day: date) -> bool:
+    """A day is frozen once it can no longer receive new articles (J and J-1 stay live)."""
+    return (datetime.now(timezone.utc).date() - day).days >= FROZEN_AFTER_DAYS
+
+
+def _fetch_cluster_rows_for_days(
+    days_to_fetch: list[str], theme: str | None
+) -> dict[str, dict[str, list[dict[str, float | int | str]]]]:
+    if not days_to_fetch:
+        return {}
+
     database_url = get_database_url()
     if database_url:
         query = """
@@ -131,34 +137,35 @@ def _cluster_rows(
                    COALESCE(cluster_id, url), AVG(score), COUNT(*),
                    LEAST(%s, 1.0 + 0.2 * (COUNT(*) - 1))
             FROM daily_articles
-            WHERE score IS NOT NULL AND article_day BETWEEN %s AND %s
+            WHERE score IS NOT NULL AND article_day = ANY(%s)
               AND (%s IS NULL OR COALESCE(theme, 'finance') = %s)
             GROUP BY article_day, category, cluster_id, url
             ORDER BY article_day, category, cluster_id, url
             """
-        params = (CLUSTER_WEIGHT_CAP, start_date, end_date, theme, theme)
+        params = (CLUSTER_WEIGHT_CAP, days_to_fetch, theme, theme)
         with get_database_connection() as connection:
             cursor = connection.cursor()
             cursor.execute(query, params)
             rows = cursor.fetchall()
     else:
-        query = """
+        placeholders = ", ".join("?" for _ in days_to_fetch)
+        query = f"""
             SELECT article_day, COALESCE(category, 'economy'),
                    COALESCE(cluster_id, url), AVG(score), COUNT(*),
                    MIN(?, 1.0 + 0.2 * (COUNT(*) - 1))
             FROM daily_articles
-            WHERE score IS NOT NULL AND article_day BETWEEN ? AND ?
+            WHERE score IS NOT NULL AND article_day IN ({placeholders})
               AND (? IS NULL OR COALESCE(theme, 'finance') = ?)
             GROUP BY article_day, category, cluster_id, url
             ORDER BY article_day, category, cluster_id, url
             """
-        params = (CLUSTER_WEIGHT_CAP, start_date, end_date, theme, theme)
+        params = (CLUSTER_WEIGHT_CAP, *days_to_fetch, theme, theme)
         with get_database_connection() as connection:
             rows = connection.execute(query, params).fetchall()
 
-    grouped = defaultdict(lambda: defaultdict(list))
+    fetched: dict[str, dict[str, list[dict[str, float | int | str]]]] = defaultdict(lambda: defaultdict(list))
     for article_day, category, cluster_key, score, article_count, cluster_weight in rows:
-        grouped[article_day][category].append(
+        fetched[article_day][category].append(
             {
                 "cluster_key": cluster_key,
                 "score": float(score),
@@ -166,6 +173,41 @@ def _cluster_rows(
                 "cluster_weight": float(cluster_weight),
             }
         )
+    return fetched
+
+
+def _cluster_rows(
+    start_date: str,
+    end_date: str,
+    *,
+    theme: str | None = None,
+) -> dict[str, dict[str, list[dict[str, float | int | str]]]]:
+    """Group article scores per day/category, caching frozen days (J-2 and older) in memory."""
+    from veille_presse import initialize_database
+
+    initialize_database()
+    theme_key = theme or ""
+    start = date.fromisoformat(start_date)
+    end = date.fromisoformat(end_date)
+    requested_days = [
+        (start + timedelta(days=offset)).isoformat()
+        for offset in range((end - start).days + 1)
+    ]
+
+    days_to_fetch = [
+        day
+        for day in requested_days
+        if not _is_frozen_day(date.fromisoformat(day)) or (theme_key, day) not in _CLUSTER_CACHE
+    ]
+
+    fetched = _fetch_cluster_rows_for_days(days_to_fetch, theme)
+    for day in days_to_fetch:
+        _CLUSTER_CACHE[(theme_key, day)] = fetched.get(day, {})
+
+    grouped = defaultdict(lambda: defaultdict(list))
+    for day in requested_days:
+        for category, clusters in _CLUSTER_CACHE.get((theme_key, day), {}).items():
+            grouped[day][category].extend(clusters)
     return grouped
 
 
